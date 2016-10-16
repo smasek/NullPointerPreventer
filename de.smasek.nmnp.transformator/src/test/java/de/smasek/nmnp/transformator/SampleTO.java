@@ -8,6 +8,8 @@ public class SampleTO {
 	private String name;
 	private Date date;
 	private String w;
+	private String add;
+	
 	
 	public void setDate(Date date, String w) {
 		this.date = date;
@@ -33,9 +35,22 @@ public class SampleTO {
 	}
 
 
+	
+
+
 	@Override
 	public String toString() {
-		return "SampleTO [street=" + street + ", name=" + name + ", date=" + date + ", w=" + w + "]";
+		return "SampleTO [street=" + street + ", name=" + name + ", date=" + date + ", w=" + w + ", add=" + add + "]";
+	}
+
+
+	public String getAdd() {
+		return add;
+	}
+
+
+	public void setAdd(String add) {
+		this.add = add;
 	}
 
 	

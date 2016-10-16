@@ -1,11 +1,15 @@
 package de.smasek.nmnp.transformator;
 
+import java.util.List;
+
 public class Adress {
 
 	private String city;
 	private String street;
 	
 	private String no;
+	
+	private List<String> add;
 
 	public String getCity() {
 		return city;
@@ -29,6 +33,14 @@ public class Adress {
 
 	public void setNo(String no) {
 		this.no = no;
+	}
+
+	public List<String> getAdd() {
+		return add;
+	}
+
+	public void setAdd(List<String> add) {
+		this.add = add;
 	}
 	
 	
