@@ -36,29 +36,38 @@ public final class Transformator {
 	public Class<?> transform() throws Exception {
 		mappingClass.addMethod(createSaveGetMethod());
 		mappingClass.instrument(new MethodCallRedirectorToSaveGet());
+		mappingClass.instrument(new WhenNotNullMethodCreator());
 		mappingClass.instrument(new MethodCallRedirectorToCheckNull());
 		mappingClass.writeFile();
 		return mappingClass.toClass();
 	}
 
 	private CtMethod createSaveGetMethod() throws CannotCompileException {
-		return CtNewMethod.make(objectClass, "$saveGet", new CtClass[] { listClass, CtClass.intType },
-				null, "{return $1 == null ? null : ($1.size() <= $2 ? null : $1.get($2));}", mappingClass);
+		return CtNewMethod.make(objectClass, "$saveGet", new CtClass[] { listClass, CtClass.intType }, null,
+				"{return $1 == null ? null : ($1.size() <= $2 ? null : $1.get($2));}", mappingClass);
+	}
+
+	private boolean isListGetMethodCall(MethodCall methodCall) throws NotFoundException {
+		if (!methodCall.getMethodName().equals("get")) {
+			return false;
+		}
+		if (!methodCall.getMethod().getDeclaringClass().subclassOf(listClass)) {
+			return false;
+		}
+		return true;
+	}
+
+	private boolean isInPrecentNullPointerMethod(MethodCall methodCall) {
+		return methodCall.where().hasAnnotation(PreventNullPointerException.class);
 	}
 
 	private final class MethodCallRedirectorToSaveGet extends ExprEditorWithCondition<MethodCall> {
 		@Override
 		public boolean isCandidate(MethodCall methodCall) throws Exception {
-			if (!methodCall.where().hasAnnotation(PreventNullPointerException.class)) {
+			if (!isInPrecentNullPointerMethod(methodCall)) {
 				return false;
 			}
-			if (!methodCall.getMethodName().equals("get")) {
-				return false;
-			}
-			if (!methodCall.getMethod().getDeclaringClass().subclassOf(listClass)) {
-				return false;
-			}
-			return true;
+			return isListGetMethodCall(methodCall);
 		}
 
 		@Override
@@ -68,46 +77,52 @@ public final class Transformator {
 	}
 
 	private final class MethodCallRedirectorToCheckNull extends ExprEditorWithCondition<MethodCall> {
-		private final Set<String> transformedMethods = new HashSet<String>();
 
 		@Override
 		public boolean isCandidate(MethodCall methodCall) throws Exception {
-			return methodCall.where().hasAnnotation(PreventNullPointerException.class);
+			if (!isInPrecentNullPointerMethod(methodCall)) {
+				return false;
+			}
+			return !isListGetMethodCall(methodCall);
 		}
 
 		@Override
 		public void doEdit(MethodCall methodCall) throws Exception {
-			addWhenNotNullMethodDoesNotExist(methodCall);
 			methodCall.replace(String.format(CALL, methodCall.getMethodName()));
 		}
+	}
 
-		private void addWhenNotNullMethodDoesNotExist(MethodCall methodCall) throws Exception {
-			if (!transformedMethods.contains(methodCall.getMethod().getLongName())) {
-				mappingClass.addMethod(new WhenNotNullMethodCreator(methodCall.getMethod()).createWhenNotNullMethod());
-				transformedMethods.add(methodCall.getMethod().getLongName());
+	private final class WhenNotNullMethodCreator extends ExprEditorWithCondition<MethodCall> {
+		private final Set<String> transformedMethods = new HashSet<String>();
+
+		@Override
+		public boolean isCandidate(MethodCall methodCall) throws Exception {
+			if (!isInPrecentNullPointerMethod(methodCall)) {
+				return false;
 			}
+			if  (isListGetMethodCall(methodCall)) {
+				return false;
+			}
+			return transformedMethods.add(methodCall.getMethod().getLongName());
+		}
+		
+		@Override
+		public void doEdit(MethodCall methodCall) throws Exception {
+			mappingClass.addMethod(createWhenNotNullMethod(methodCall.getMethod()));
 		}
 
-		private final class WhenNotNullMethodCreator {
-			private final CtMethod method;
+		private CtMethod createWhenNotNullMethod(CtMethod method) throws CannotCompileException, NotFoundException {
+			return CtNewMethod.make(method.getReturnType(), method.getName() + METHOD_POSTFIX,
+					concatTargetToParameterTypes(method), method.getExceptionTypes(),
+					String.format(BODY, method.getName(), useArgs(method)), mappingClass);
+		}
 
-			public WhenNotNullMethodCreator(CtMethod method) {
-				this.method = method;
-			}
+		private CtClass[] concatTargetToParameterTypes(CtMethod method) throws NotFoundException {
+			return ObjectArrays.concat(method.getDeclaringClass(), method.getParameterTypes());
+		}
 
-			private CtMethod createWhenNotNullMethod() throws CannotCompileException, NotFoundException {
-				return CtNewMethod.make(method.getReturnType(), method.getName() + METHOD_POSTFIX,
-						concatTargetToParameterTypes(), method.getExceptionTypes(),
-						String.format(BODY, method.getName(), useArgs()), mappingClass);
-			}
-
-			private CtClass[] concatTargetToParameterTypes() throws NotFoundException {
-				return ObjectArrays.concat(method.getDeclaringClass(), method.getParameterTypes());
-			}
-
-			private String useArgs() throws NotFoundException {
-				return ARGS.substring(0, Math.max(0, method.getParameterTypes().length * 4 - 1));
-			}
+		private String useArgs(CtMethod method) throws NotFoundException {
+			return ARGS.substring(0, Math.max(0, method.getParameterTypes().length * 4 - 1));
 		}
 	}
 }
